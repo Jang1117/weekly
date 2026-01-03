@@ -564,26 +564,22 @@
             }
             
             #printContainer {
-                display: block !important;
+                display: flex !important;
+                justify-content: center;
+                align-items: center;
                 width: 100%;
+                height: 100vh;
+                page-break-inside: avoid;
             }
             
             #printContainer img {
-                width: 100%;
-                height: auto;
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
             }
             
             @page {
-                margin: 10mm;
-            }
-        }
-        
-        @media print {
-            body.print-portrait {
-                /* 세로 모드 */
-            }
-            body.print-landscape {
-                /* 가로 모드 */
+                margin: 3mm;
             }
         }
         
@@ -786,14 +782,32 @@
                 document.getElementById('mondayDate').value = weekDates.monday;
                 updateDatePreview();
             } else {
-                // 이번 주 월요일로 기본값 설정
-                const today = new Date();
-                const day = today.getDay();
-                const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-                const monday = new Date(today.setDate(diff));
-                document.getElementById('mondayDate').value = monday.toISOString().split('T')[0];
+                // 다가올 가장 가까운 월요일로 기본값 설정
+                document.getElementById('mondayDate').value = getNextMonday();
                 updateDatePreview();
             }
+        }
+        
+        // 다가올 가장 가까운 월요일 구하기
+        function getNextMonday() {
+            const today = new Date();
+            const day = today.getDay(); // 0=일, 1=월, ..., 6=토
+            
+            let daysUntilMonday;
+            if (day === 0) {
+                // 일요일이면 내일이 월요일
+                daysUntilMonday = 1;
+            } else if (day === 1) {
+                // 오늘이 월요일이면 오늘
+                daysUntilMonday = 0;
+            } else {
+                // 화~토요일이면 다음 월요일까지
+                daysUntilMonday = 8 - day;
+            }
+            
+            const nextMonday = new Date(today);
+            nextMonday.setDate(today.getDate() + daysUntilMonday);
+            return nextMonday.toISOString().split('T')[0];
         }
         
         // 날짜 설정 모달 닫기
@@ -845,6 +859,16 @@
         function loadSavedDates() {
             if (weekDates) {
                 const monday = new Date(weekDates.monday);
+                for (let i = 0; i < 7; i++) {
+                    const date = new Date(monday);
+                    date.setDate(monday.getDate() + i);
+                    const dateStr = `(${date.getMonth() + 1}/${date.getDate()})`;
+                    document.getElementById(`date-${i}`).textContent = dateStr;
+                }
+            } else {
+                // 저장된 날짜 없으면 다가올 월요일로 초기화
+                const mondayStr = getNextMonday();
+                const monday = new Date(mondayStr);
                 for (let i = 0; i < 7; i++) {
                     const date = new Date(monday);
                     date.setDate(monday.getDate() + i);
@@ -973,7 +997,7 @@
                 }
                 printStyle = document.createElement('style');
                 printStyle.id = 'printPageStyle';
-                printStyle.textContent = `@media print { @page { size: A4 ${selectedOrientation}; margin: 10mm; } }`;
+                printStyle.textContent = `@media print { @page { size: A4 ${selectedOrientation}; margin: 3mm; } }`;
                 document.head.appendChild(printStyle);
                 
                 // 로딩 숨기기
@@ -1038,12 +1062,13 @@
                             e.stopPropagation();
                             
                             if (e.ctrlKey || e.metaKey) {
+                                // Ctrl+클릭: 복사만 (나중에 붙여넣기 위해)
                                 copiedEvent = { ...event };
                                 eventEl.style.animation = 'pulse 0.3s';
                                 setTimeout(() => {
                                     eventEl.style.animation = '';
                                 }, 300);
-                                showNotification('일정이 복사되었습니다. 원하는 위치에서 Ctrl+V를 눌러 붙여넣으세요.');
+                                showNotification('일정이 복사되었습니다. 빈 셀을 Ctrl+클릭하여 붙여넣으세요.');
                             } else {
                                 isDraggingEvent = true;
                                 draggedEventIndex = index;
@@ -1066,6 +1091,26 @@
         // 드래그로 일정 생성
         grid.addEventListener('mousedown', (e) => {
             if (e.target.classList.contains('schedule-cell') && !isResizing) {
+                // Ctrl+클릭으로 붙여넣기
+                if ((e.ctrlKey || e.metaKey) && copiedEvent) {
+                    e.preventDefault();
+                    const newDay = parseInt(e.target.dataset.day);
+                    const newTime = parseInt(e.target.dataset.time);
+                    const duration = copiedEvent.endTime - copiedEvent.startTime;
+                    
+                    events.push({
+                        ...copiedEvent,
+                        day: newDay,
+                        startTime: newTime,
+                        endTime: newTime + duration
+                    });
+                    
+                    saveToLocalStorage();
+                    renderEvents();
+                    showNotification('일정이 붙여넣기 되었습니다.');
+                    return;
+                }
+                
                 isDragging = true;
                 dragStart = {
                     day: parseInt(e.target.dataset.day),
@@ -1328,12 +1373,28 @@
         }
         
         function exportSchedule() {
-            const data = JSON.stringify(events, null, 2);
+            // 이벤트와 날짜 정보를 함께 저장
+            const exportData = {
+                events: events,
+                weekDates: weekDates || { monday: getNextMonday() }
+            };
+            
+            const data = JSON.stringify(exportData, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'weekly_schedule.json';
+            
+            // 파일명에 월요일 날짜 추가
+            let dateStr = '';
+            const mondayStr = weekDates ? weekDates.monday : getNextMonday();
+            const monday = new Date(mondayStr);
+            const yy = String(monday.getFullYear()).slice(2);
+            const mm = String(monday.getMonth() + 1).padStart(2, '0');
+            const dd = String(monday.getDate()).padStart(2, '0');
+            dateStr = `_${yy}${mm}${dd}`;
+            
+            a.download = `weekly_schedule${dateStr}.json`;
             a.click();
         }
         
@@ -1346,7 +1407,24 @@
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     try {
-                        events = JSON.parse(event.target.result);
+                        const importedData = JSON.parse(event.target.result);
+                        
+                        // 새로운 형식 (events + weekDates) 또는 기존 형식 (배열만) 처리
+                        if (importedData.events && Array.isArray(importedData.events)) {
+                            // 새로운 형식
+                            events = importedData.events;
+                            if (importedData.weekDates) {
+                                weekDates = importedData.weekDates;
+                                localStorage.setItem('weekDates', JSON.stringify(weekDates));
+                                loadSavedDates();
+                            }
+                        } else if (Array.isArray(importedData)) {
+                            // 기존 형식 (배열만)
+                            events = importedData;
+                        } else {
+                            throw new Error('잘못된 파일 형식');
+                        }
+                        
                         saveToLocalStorage();
                         renderEvents();
                         alert('일정을 불러왔습니다');
@@ -1363,7 +1441,7 @@
         initPrintModal();
         renderEvents();
         
-        // 키보드 붙여넣기 (Ctrl+V)
+        // 키보드 붙여넣기 (Ctrl+V) - 기존 기능 유지
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent) {
                 e.preventDefault();
@@ -1383,8 +1461,7 @@
                     
                     saveToLocalStorage();
                     renderEvents();
-                    
-                    copiedEvent = null;
+                    showNotification('일정이 붙여넣기 되었습니다.');
                 }
             }
         });
