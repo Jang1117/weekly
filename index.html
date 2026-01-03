@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주간 일정표</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+        
+        .instructions {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .schedule-wrapper {
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 70vh;
+        }
+        
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: 70px repeat(7, 1fr);
+            min-width: 900px;
+            position: relative;
+        }
+        
+        .header {
+            background: #667eea;
+            color: white;
+            padding: 15px 10px;
+            text-align: center;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border: 1px solid #5568d3;
+        }
+        
+        .header-date {
+            font-size: 12px;
+            font-weight: normal;
+            opacity: 0.9;
+        }
+        
+        .header[data-day] {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .header[data-day]:hover {
+            background: #5568d3;
+        }
+        
+        .time-slot {
+            background: #f8f9fa;
+            padding: 4px 5px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: #555;
+            border: 1px solid #e0e0e0;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        
+        .schedule-cell {
+            background: white;
+            border: 1px solid #e0e0e0;
+            min-height: 40px;
+            position: relative;
+            cursor: crosshair;
+            transition: background 0.2s;
+        }
+        
+        .schedule-cell:hover {
+            background: #f0f7ff;
+        }
+        
+        .schedule-cell.selecting {
+            background: #d4e5ff;
+        }
+        
+        .schedule-cell.drop-target {
+            background: #fff3cd;
+            border: 2px dashed #ffc107;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+        }
+        
+        .event {
+            position: absolute;
+            left: 2px;
+            right: 2px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: move;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 3;
+        }
+        
+        .event:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .event-title {
+            font-weight: 600;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .event-time {
+            font-size: 11px;
+            opacity: 0.9;
+        }
+        
+        .event-delete {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: rgba(255,255,255,0.3);
+            border: none;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+        }
+        
+        .event:hover .event-delete {
+            display: flex;
+        }
+        
+        .event-edit {
+            position: absolute;
+            top: 2px;
+            right: 24px;
+            background: rgba(255,255,255,0.3);
+            border: none;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+        }
+        
+        .event:hover .event-edit {
+            display: flex;
+        }
+        
+        .event-resize-handle {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            cursor: ns-resize;
+            background: rgba(255,255,255,0.2);
+            opacity: 0;
+        }
+        
+        .event:hover .event-resize-handle {
+            opacity: 1;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .modal-content h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .user-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        
+        .user-button {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .user-button.active {
+            border-color: #667eea;
+            transform: scale(1.05);
+        }
+        
+        .user-button.ahyun {
+            color: #e91e63;
+        }
+        
+        .user-button.ahyun.active {
+            background: #fce4ec;
+            border-color: #e91e63;
+        }
+        
+        .user-button.haseung {
+            color: #2196f3;
+        }
+        
+        .user-button.haseung.active {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+        
+        .user-button.common {
+            color: #4caf50;
+        }
+        
+        .user-button.common.active {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+        
+        .event.ahyun {
+            background: linear-gradient(135deg, #f48fb1 0%, #e91e63 100%);
+        }
+        
+        .event.haseung {
+            background: linear-gradient(135deg, #64b5f6 0%, #2196f3 100%);
+        }
+        
+        .event.common {
+            background: linear-gradient(135deg, #81c784 0%, #4caf50 100%);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .modal-buttons button {
+            flex: 1;
+        }
+        
+        .btn-cancel {
+            background: #6c757d;
+        }
+        
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+        
+        /* 인쇄 설정 모달 */
+        .print-modal-content {
+            max-width: 500px;
+        }
+        
+        .time-range-selector {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        .time-range-selector select {
+            padding: 10px 15px;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .time-range-selector span {
+            font-size: 18px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .print-preview-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: center;
+            color: #555;
+        }
+        
+        .orientation-selector {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .orientation-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s;
+            color: #333;
+        }
+        
+        .orientation-btn:hover {
+            border-color: #667eea;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .orientation-btn.active {
+            background: #e8eeff;
+            border-color: #667eea;
+            color: #667eea;
+        }
+        
+        .date-preview {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        
+        .date-preview div {
+            padding: 5px;
+        }
+        
+        .date-preview span {
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        /* 로딩 오버레이 */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.9);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        
+        .loading-overlay.active {
+            display: flex;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            margin-top: 20px;
+            font-size: 16px;
+            color: #333;
+        }
+        
+        @media (max-width: 768px) {
+            .schedule-grid {
+                font-size: 12px;
+            }
+            
+            h1 {
+                font-size: 1.5em;
+            }
+        }
+        
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+                margin: 0;
+            }
+            
+            .container {
+                display: none;
+            }
+            
+            .controls {
+                display: none;
+            }
+            
+            .modal {
+                display: none !important;
+            }
+            
+            .loading-overlay {
+                display: none !important;
+            }
+            
+            #printContainer {
+                display: block !important;
+                width: 100%;
+            }
+            
+            #printContainer img {
+                width: 100%;
+                height: auto;
+            }
+            
+            @page {
+                margin: 10mm;
+            }
+        }
+        
+        @media print {
+            body.print-portrait {
+                /* 세로 모드 */
+            }
+            body.print-landscape {
+                /* 가로 모드 */
+            }
+        }
+        
+        #printContainer {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📅 주간 일정표</h1>
+        <div class="instructions">
+            💡 드래그하여 일정 생성 | ✏️ 버튼으로 수정 | 왼쪽 드래그로 이동 | Ctrl+클릭으로 복사 후 Ctrl+V로 붙여넣기 | 하단 드래그로 크기 조절
+        </div>
+        
+        <div class="schedule-wrapper" id="scheduleWrapper">
+            <div class="schedule-grid" id="scheduleGrid">
+                <div class="header" style="grid-column: 1;">시간</div>
+                <div class="header" data-day="0">월요일<br><span class="header-date" id="date-0">(1/6)</span></div>
+                <div class="header" data-day="1">화요일<br><span class="header-date" id="date-1">(1/7)</span></div>
+                <div class="header" data-day="2">수요일<br><span class="header-date" id="date-2">(1/8)</span></div>
+                <div class="header" data-day="3">목요일<br><span class="header-date" id="date-3">(1/9)</span></div>
+                <div class="header" data-day="4">금요일<br><span class="header-date" id="date-4">(1/10)</span></div>
+                <div class="header" data-day="5">토요일<br><span class="header-date" id="date-5">(1/11)</span></div>
+                <div class="header" data-day="6">일요일<br><span class="header-date" id="date-6">(1/12)</span></div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="openDateModal()">📅 날짜 설정</button>
+            <button onclick="openPrintModal()">🖨️ A4 인쇄</button>
+            <button onclick="clearAllEvents()">전체 지우기</button>
+            <button onclick="exportSchedule()">내보내기</button>
+            <button onclick="importSchedule()">가져오기</button>
+        </div>
+    </div>
+    
+    <!-- 인쇄용 컨테이너 -->
+    <div id="printContainer"></div>
+    
+    <!-- 로딩 오버레이 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">인쇄 준비 중...</div>
+    </div>
+    
+    <!-- 일정 생성/수정 모달 -->
+    <div class="modal" id="eventModal">
+        <div class="modal-content">
+            <h2 id="modalTitle">새 일정</h2>
+            <div class="user-selector">
+                <button type="button" class="user-button ahyun active" onclick="selectUser('ahyun')">
+                    👩 아현
+                </button>
+                <button type="button" class="user-button haseung" onclick="selectUser('haseung')">
+                    👨 하승
+                </button>
+                <button type="button" class="user-button common" onclick="selectUser('common')">
+                    👥 공통
+                </button>
+            </div>
+            <div class="form-group">
+                <label>일정 제목</label>
+                <input type="text" id="eventTitle" placeholder="일정 제목을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label>설명 (선택)</label>
+                <textarea id="eventDescription" placeholder="상세 설명"></textarea>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeModal()">취소</button>
+                <button onclick="saveEvent()">저장</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 인쇄 설정 모달 -->
+    <div class="modal" id="printModal">
+        <div class="modal-content print-modal-content">
+            <h2>🖨️ 인쇄 설정</h2>
+            <p style="text-align: center; color: #666; margin-bottom: 15px;">인쇄할 시간대를 선택하세요</p>
+            
+            <div class="time-range-selector">
+                <select id="printStartTime"></select>
+                <span>~</span>
+                <select id="printEndTime"></select>
+            </div>
+            
+            <div class="print-preview-info" id="printPreviewInfo">
+                선택된 시간대: 09:00 ~ 21:00
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <label style="display: block; margin-bottom: 10px; color: #555; font-weight: 500; text-align: center;">용지 방향</label>
+                <div class="orientation-selector">
+                    <button type="button" class="orientation-btn active" data-orientation="portrait" onclick="selectOrientation('portrait')">
+                        📄 세로
+                    </button>
+                    <button type="button" class="orientation-btn" data-orientation="landscape" onclick="selectOrientation('landscape')">
+                        📃 가로
+                    </button>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closePrintModal()">취소</button>
+                <button onclick="executePrint()">인쇄하기</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 날짜 설정 모달 -->
+    <div class="modal" id="dateModal">
+        <div class="modal-content">
+            <h2>📅 날짜 설정</h2>
+            <p style="text-align: center; color: #666; margin-bottom: 15px;">월요일 날짜를 선택하면 나머지 요일이 자동 계산됩니다</p>
+            
+            <div class="form-group">
+                <label>월요일 날짜</label>
+                <input type="date" id="mondayDate">
+            </div>
+            
+            <div class="date-preview" id="datePreview">
+                <div>월요일: <span id="preview-0">1/6</span></div>
+                <div>화요일: <span id="preview-1">1/7</span></div>
+                <div>수요일: <span id="preview-2">1/8</span></div>
+                <div>목요일: <span id="preview-3">1/9</span></div>
+                <div>금요일: <span id="preview-4">1/10</span></div>
+                <div>토요일: <span id="preview-5">1/11</span></div>
+                <div>일요일: <span id="preview-6">1/12</span></div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeDateModal()">취소</button>
+                <button onclick="saveDates()">저장</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 시간대 생성 (9:00 ~ 21:00, 30분 간격)
+        const times = [];
+        for (let h = 9; h <= 21; h++) {
+            times.push(`${String(h).padStart(2, '0')}:00`);
+            if (h < 21) times.push(`${String(h).padStart(2, '0')}:30`);
+        }
+        
+        const days = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+        const grid = document.getElementById('scheduleGrid');
+        
+        // 그리드 생성 - 각 행에 data-row 속성 추가
+        times.forEach((time, timeIndex) => {
+            const timeSlot = document.createElement('div');
+            timeSlot.className = 'time-slot';
+            timeSlot.textContent = time;
+            timeSlot.dataset.row = timeIndex;
+            grid.appendChild(timeSlot);
+            
+            days.forEach((day, dayIndex) => {
+                const cell = document.createElement('div');
+                cell.className = 'schedule-cell';
+                cell.dataset.day = dayIndex;
+                cell.dataset.time = timeIndex;
+                cell.dataset.row = timeIndex;
+                grid.appendChild(cell);
+            });
+        });
+        
+        // 전역 변수
+        let events = JSON.parse(localStorage.getItem('weeklyEvents') || '[]');
+        let isDragging = false;
+        let dragStart = null;
+        let dragEnd = null;
+        let currentEvent = null;
+        let isResizing = false;
+        let resizingEvent = null;
+        let isDraggingEvent = false;
+        let draggedEventIndex = null;
+        let dragOffset = { x: 0, y: 0 };
+        let copiedEvent = null;
+        let selectedUser = 'ahyun';
+        let selectedOrientation = 'portrait'; // 기본 세로 방향
+        let weekDates = JSON.parse(localStorage.getItem('weekDates') || 'null');
+        
+        // 용지 방향 선택
+        function selectOrientation(orientation) {
+            selectedOrientation = orientation;
+            document.querySelectorAll('.orientation-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.orientation-btn[data-orientation="${orientation}"]`).classList.add('active');
+        }
+        
+        // 날짜 설정 모달 열기
+        function openDateModal() {
+            document.getElementById('dateModal').classList.add('active');
+            
+            // 현재 저장된 날짜가 있으면 설정
+            if (weekDates) {
+                document.getElementById('mondayDate').value = weekDates.monday;
+                updateDatePreview();
+            } else {
+                // 이번 주 월요일로 기본값 설정
+                const today = new Date();
+                const day = today.getDay();
+                const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+                const monday = new Date(today.setDate(diff));
+                document.getElementById('mondayDate').value = monday.toISOString().split('T')[0];
+                updateDatePreview();
+            }
+        }
+        
+        // 날짜 설정 모달 닫기
+        function closeDateModal() {
+            document.getElementById('dateModal').classList.remove('active');
+        }
+        
+        // 날짜 미리보기 업데이트
+        function updateDatePreview() {
+            const mondayInput = document.getElementById('mondayDate').value;
+            if (!mondayInput) return;
+            
+            const monday = new Date(mondayInput);
+            
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(monday);
+                date.setDate(monday.getDate() + i);
+                const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+                document.getElementById(`preview-${i}`).textContent = dateStr;
+            }
+        }
+        
+        // 날짜 저장
+        function saveDates() {
+            const mondayInput = document.getElementById('mondayDate').value;
+            if (!mondayInput) {
+                alert('월요일 날짜를 선택하세요');
+                return;
+            }
+            
+            const monday = new Date(mondayInput);
+            weekDates = { monday: mondayInput };
+            
+            // 헤더에 날짜 업데이트
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(monday);
+                date.setDate(monday.getDate() + i);
+                const dateStr = `(${date.getMonth() + 1}/${date.getDate()})`;
+                document.getElementById(`date-${i}`).textContent = dateStr;
+            }
+            
+            // localStorage에 저장
+            localStorage.setItem('weekDates', JSON.stringify(weekDates));
+            
+            closeDateModal();
+        }
+        
+        // 저장된 날짜 불러오기
+        function loadSavedDates() {
+            if (weekDates) {
+                const monday = new Date(weekDates.monday);
+                for (let i = 0; i < 7; i++) {
+                    const date = new Date(monday);
+                    date.setDate(monday.getDate() + i);
+                    const dateStr = `(${date.getMonth() + 1}/${date.getDate()})`;
+                    document.getElementById(`date-${i}`).textContent = dateStr;
+                }
+            }
+        }
+        
+        // 날짜 입력 변경 이벤트
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('mondayDate').addEventListener('change', updateDatePreview);
+            loadSavedDates();
+        });
+        
+        // 인쇄 설정 모달 초기화
+        function initPrintModal() {
+            const startSelect = document.getElementById('printStartTime');
+            const endSelect = document.getElementById('printEndTime');
+            
+            times.forEach((time, index) => {
+                const startOption = document.createElement('option');
+                startOption.value = index;
+                startOption.textContent = time;
+                startSelect.appendChild(startOption);
+                
+                const endOption = document.createElement('option');
+                endOption.value = index;
+                endOption.textContent = time;
+                endSelect.appendChild(endOption);
+            });
+            
+            startSelect.value = 0;
+            endSelect.value = times.length - 1;
+            
+            startSelect.addEventListener('change', updatePrintPreview);
+            endSelect.addEventListener('change', updatePrintPreview);
+        }
+        
+        function updatePrintPreview() {
+            const startIndex = parseInt(document.getElementById('printStartTime').value);
+            const endIndex = parseInt(document.getElementById('printEndTime').value);
+            
+            const info = document.getElementById('printPreviewInfo');
+            
+            if (startIndex > endIndex) {
+                info.textContent = '⚠️ 시작 시간이 종료 시간보다 늦을 수 없습니다';
+                info.style.color = '#dc3545';
+            } else {
+                const rowCount = endIndex - startIndex + 1;
+                info.textContent = `선택된 시간대: ${times[startIndex]} ~ ${times[endIndex]} (${rowCount}개 행)`;
+                info.style.color = '#555';
+            }
+        }
+        
+        function openPrintModal() {
+            document.getElementById('printModal').classList.add('active');
+            updatePrintPreview();
+        }
+        
+        function closePrintModal() {
+            document.getElementById('printModal').classList.remove('active');
+        }
+        
+        async function executePrint() {
+            const startIndex = parseInt(document.getElementById('printStartTime').value);
+            const endIndex = parseInt(document.getElementById('printEndTime').value);
+            
+            if (startIndex > endIndex) {
+                alert('시작 시간이 종료 시간보다 늦을 수 없습니다.');
+                return;
+            }
+            
+            closePrintModal();
+            
+            // 로딩 표시
+            document.getElementById('loadingOverlay').classList.add('active');
+            
+            try {
+                // 선택되지 않은 행 숨기기
+                const allRows = document.querySelectorAll('[data-row]');
+                allRows.forEach(el => {
+                    const rowIndex = parseInt(el.dataset.row);
+                    if (rowIndex < startIndex || rowIndex > endIndex) {
+                        el.style.display = 'none';
+                    }
+                });
+                
+                // 스크롤 위치 저장 및 맨 위로 이동
+                const wrapper = document.getElementById('scheduleWrapper');
+                const originalScroll = wrapper.scrollTop;
+                wrapper.scrollTop = 0;
+                
+                // 잠시 대기 (DOM 업데이트 반영)
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // html2canvas로 캡쳐
+                const canvas = await html2canvas(document.getElementById('scheduleGrid'), {
+                    scale: 2, // 고해상도
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: '#ffffff'
+                });
+                
+                // 숨긴 행 복원
+                allRows.forEach(el => {
+                    el.style.display = '';
+                });
+                
+                // 스크롤 위치 복원
+                wrapper.scrollTop = originalScroll;
+                
+                // 이미지를 인쇄용 컨테이너에 추가
+                const printContainer = document.getElementById('printContainer');
+                printContainer.innerHTML = '';
+                
+                const img = document.createElement('img');
+                img.src = canvas.toDataURL('image/png');
+                img.style.width = '100%';
+                printContainer.appendChild(img);
+                
+                // 동적으로 @page 스타일 추가
+                let printStyle = document.getElementById('printPageStyle');
+                if (printStyle) {
+                    printStyle.remove();
+                }
+                printStyle = document.createElement('style');
+                printStyle.id = 'printPageStyle';
+                printStyle.textContent = `@media print { @page { size: A4 ${selectedOrientation}; margin: 10mm; } }`;
+                document.head.appendChild(printStyle);
+                
+                // 로딩 숨기기
+                document.getElementById('loadingOverlay').classList.remove('active');
+                
+                // 인쇄
+                setTimeout(() => {
+                    window.print();
+                }, 100);
+                
+            } catch (error) {
+                console.error('인쇄 준비 중 오류:', error);
+                document.getElementById('loadingOverlay').classList.remove('active');
+                alert('인쇄 준비 중 오류가 발생했습니다.');
+                
+                // 오류 시 복원
+                const allRows = document.querySelectorAll('[data-row]');
+                allRows.forEach(el => {
+                    el.style.display = '';
+                });
+            }
+        }
+        
+        // 이벤트 렌더링
+        function renderEvents() {
+            document.querySelectorAll('.event').forEach(e => e.remove());
+            
+            events.forEach((event, index) => {
+                const eventEl = document.createElement('div');
+                eventEl.className = `event ${event.user || 'ahyun'}`;
+                eventEl.dataset.index = index;
+                
+                const duration = event.endTime - event.startTime + 1;
+                const cellHeight = 40;
+                
+                eventEl.style.top = '0px';
+                eventEl.style.height = `${duration * cellHeight - 4}px`;
+                
+                const endTimeIndex = Math.min(event.endTime + 1, times.length - 1);
+                
+                const userIcon = event.user === 'ahyun' ? '👩 ' : event.user === 'haseung' ? '👨 ' : '👥 ';
+                eventEl.innerHTML = `
+                    <div class="event-title">${userIcon}${event.title}</div>
+                    <div class="event-time">${times[event.startTime]} - ${times[endTimeIndex]}</div>
+                    <button class="event-edit" onclick="editEvent(${index})">✏️</button>
+                    <button class="event-delete" onclick="deleteEvent(${index})">×</button>
+                    <div class="event-resize-handle"></div>
+                `;
+                
+                const targetCell = document.querySelector(
+                    `.schedule-cell[data-day="${event.day}"][data-time="${event.startTime}"]`
+                );
+                
+                if (targetCell) {
+                    targetCell.appendChild(eventEl);
+                    
+                    eventEl.addEventListener('mousedown', (e) => {
+                        if (e.button === 0 && !e.target.classList.contains('event-delete') && 
+                            !e.target.classList.contains('event-edit') &&
+                            !e.target.classList.contains('event-resize-handle')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            if (e.ctrlKey || e.metaKey) {
+                                copiedEvent = { ...event };
+                                eventEl.style.animation = 'pulse 0.3s';
+                                setTimeout(() => {
+                                    eventEl.style.animation = '';
+                                }, 300);
+                                showNotification('일정이 복사되었습니다. 원하는 위치에서 Ctrl+V를 눌러 붙여넣으세요.');
+                            } else {
+                                isDraggingEvent = true;
+                                draggedEventIndex = index;
+                                eventEl.style.opacity = '0.6';
+                                eventEl.style.zIndex = '1000';
+                            }
+                        }
+                    });
+                    
+                    const resizeHandle = eventEl.querySelector('.event-resize-handle');
+                    resizeHandle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        isResizing = true;
+                        resizingEvent = index;
+                    });
+                }
+            });
+        }
+        
+        // 드래그로 일정 생성
+        grid.addEventListener('mousedown', (e) => {
+            if (e.target.classList.contains('schedule-cell') && !isResizing) {
+                isDragging = true;
+                dragStart = {
+                    day: parseInt(e.target.dataset.day),
+                    time: parseInt(e.target.dataset.time)
+                };
+                dragEnd = {...dragStart};
+                e.target.classList.add('selecting');
+            }
+        });
+        
+        grid.addEventListener('mousemove', (e) => {
+            if (isDragging && e.target.classList.contains('schedule-cell')) {
+                const newDay = parseInt(e.target.dataset.day);
+                const newTime = parseInt(e.target.dataset.time);
+                
+                if (newDay === dragStart.day) {
+                    dragEnd = { day: newDay, time: newTime };
+                    updateSelection();
+                }
+            }
+        });
+        
+        document.addEventListener('mouseup', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                document.querySelectorAll('.selecting').forEach(c => c.classList.remove('selecting'));
+                
+                if (dragStart && dragEnd) {
+                    openModal(dragStart, dragEnd);
+                }
+            }
+            
+            if (isResizing) {
+                isResizing = false;
+                resizingEvent = null;
+                saveToLocalStorage();
+            }
+            
+            if (isDraggingEvent && draggedEventIndex !== null) {
+                const cells = document.querySelectorAll('.schedule-cell');
+                let targetCell = null;
+                
+                cells.forEach(cell => {
+                    const rect = cell.getBoundingClientRect();
+                    if (e.clientX >= rect.left && e.clientX <= rect.right &&
+                        e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                        targetCell = cell;
+                    }
+                });
+                
+                if (targetCell) {
+                    const newDay = parseInt(targetCell.dataset.day);
+                    const newTime = parseInt(targetCell.dataset.time);
+                    const event = events[draggedEventIndex];
+                    const duration = event.endTime - event.startTime;
+                    
+                    event.day = newDay;
+                    event.startTime = newTime;
+                    event.endTime = newTime + duration;
+                    
+                    saveToLocalStorage();
+                    renderEvents();
+                }
+                
+                isDraggingEvent = false;
+                draggedEventIndex = null;
+                document.querySelectorAll('.drop-target').forEach(c => c.classList.remove('drop-target'));
+            }
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isResizing && resizingEvent !== null) {
+                const cells = document.querySelectorAll('.schedule-cell');
+                let targetCell = null;
+                
+                cells.forEach(cell => {
+                    const rect = cell.getBoundingClientRect();
+                    if (e.clientX >= rect.left && e.clientX <= rect.right &&
+                        e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                        targetCell = cell;
+                    }
+                });
+                
+                if (targetCell) {
+                    const day = parseInt(targetCell.dataset.day);
+                    const time = parseInt(targetCell.dataset.time);
+                    const event = events[resizingEvent];
+                    
+                    if (day === event.day && time > event.startTime) {
+                        event.endTime = time;
+                        renderEvents();
+                    }
+                }
+            }
+            
+            if (isDraggingEvent && draggedEventIndex !== null) {
+                const cells = document.querySelectorAll('.schedule-cell');
+                let targetCell = null;
+                
+                cells.forEach(cell => {
+                    const rect = cell.getBoundingClientRect();
+                    if (e.clientX >= rect.left && e.clientX <= rect.right &&
+                        e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                        targetCell = cell;
+                    }
+                });
+                
+                if (targetCell) {
+                    document.querySelectorAll('.schedule-cell').forEach(c => c.classList.remove('drop-target'));
+                    targetCell.classList.add('drop-target');
+                }
+            }
+        });
+        
+        function updateSelection() {
+            document.querySelectorAll('.selecting').forEach(c => c.classList.remove('selecting'));
+            
+            const minTime = Math.min(dragStart.time, dragEnd.time);
+            const maxTime = Math.max(dragStart.time, dragEnd.time);
+            
+            for (let t = minTime; t <= maxTime; t++) {
+                const cell = document.querySelector(
+                    `.schedule-cell[data-day="${dragStart.day}"][data-time="${t}"]`
+                );
+                if (cell) cell.classList.add('selecting');
+            }
+        }
+        
+        function openModal(start, end) {
+            const minTime = Math.min(start.time, end.time);
+            const maxTime = Math.max(start.time, end.time);
+            
+            currentEvent = {
+                day: start.day,
+                startTime: minTime,
+                endTime: maxTime,
+                user: selectedUser
+            };
+            
+            document.getElementById('modalTitle').textContent = '새 일정';
+            document.getElementById('eventTitle').value = '';
+            document.getElementById('eventDescription').value = '';
+            
+            document.querySelectorAll('.user-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.user-button.${selectedUser}`).classList.add('active');
+            
+            document.getElementById('eventModal').classList.add('active');
+            document.getElementById('eventTitle').focus();
+        }
+        
+        function selectUser(user) {
+            selectedUser = user;
+            document.querySelectorAll('.user-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.user-button.${user}`).classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('eventModal').classList.remove('active');
+            currentEvent = null;
+        }
+        
+        function saveEvent() {
+            const title = document.getElementById('eventTitle').value.trim();
+            if (!title) {
+                alert('일정 제목을 입력하세요');
+                return;
+            }
+            
+            const description = document.getElementById('eventDescription').value.trim();
+            
+            if (currentEvent.index !== undefined) {
+                events[currentEvent.index] = {
+                    ...events[currentEvent.index],
+                    title,
+                    description,
+                    user: selectedUser
+                };
+            } else {
+                events.push({
+                    ...currentEvent,
+                    title,
+                    description,
+                    user: selectedUser
+                });
+            }
+            
+            saveToLocalStorage();
+            renderEvents();
+            closeModal();
+        }
+        
+        function editEvent(index) {
+            const event = events[index];
+            currentEvent = { ...event, index };
+            selectedUser = event.user || 'ahyun';
+            
+            document.getElementById('modalTitle').textContent = '일정 수정';
+            document.getElementById('eventTitle').value = event.title;
+            document.getElementById('eventDescription').value = event.description || '';
+            
+            document.querySelectorAll('.user-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.user-button.${selectedUser}`).classList.add('active');
+            
+            document.getElementById('eventModal').classList.add('active');
+            document.getElementById('eventTitle').focus();
+        }
+        
+        function deleteEvent(index) {
+            if (confirm('이 일정을 삭제하시겠습니까?')) {
+                events.splice(index, 1);
+                saveToLocalStorage();
+                renderEvents();
+            }
+        }
+        
+        function clearAllEvents() {
+            if (confirm('모든 일정을 삭제하시겠습니까?')) {
+                events = [];
+                saveToLocalStorage();
+                renderEvents();
+            }
+        }
+        
+        function saveToLocalStorage() {
+            localStorage.setItem('weeklyEvents', JSON.stringify(events));
+        }
+        
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #4CAF50;
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 10000;
+                font-size: 14px;
+                animation: slideDown 0.3s ease-out;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'slideUp 0.3s ease-out';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+        
+        function exportSchedule() {
+            const data = JSON.stringify(events, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'weekly_schedule.json';
+            a.click();
+        }
+        
+        function importSchedule() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        events = JSON.parse(event.target.result);
+                        saveToLocalStorage();
+                        renderEvents();
+                        alert('일정을 불러왔습니다');
+                    } catch (err) {
+                        alert('파일을 읽을 수 없습니다');
+                    }
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+        
+        // 초기화
+        initPrintModal();
+        renderEvents();
+        
+        // 키보드 붙여넣기 (Ctrl+V)
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent) {
+                e.preventDefault();
+                
+                const hoveredCell = document.querySelector('.schedule-cell:hover');
+                if (hoveredCell) {
+                    const newDay = parseInt(hoveredCell.dataset.day);
+                    const newTime = parseInt(hoveredCell.dataset.time);
+                    const duration = copiedEvent.endTime - copiedEvent.startTime;
+                    
+                    events.push({
+                        ...copiedEvent,
+                        day: newDay,
+                        startTime: newTime,
+                        endTime: newTime + duration
+                    });
+                    
+                    saveToLocalStorage();
+                    renderEvents();
+                    
+                    copiedEvent = null;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
