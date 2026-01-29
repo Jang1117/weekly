@@ -470,6 +470,23 @@
       z-index: 1001; /* 다른 헤더보다 위 */
     }
 
+
+    /* ✅ v10: 요일별 구분선(굵은 선) */
+    .header-main[data-day]:not([data-day="6"]) {
+      border-right: 4px solid rgba(0,0,0,0.25);
+    }
+
+    /* header-sub는 요일별 1개씩이며 마지막(일요일)만 예외 처리 */
+    .header-sub { border-right: 4px solid rgba(0,0,0,0.18); }
+    .header-sub[style*="grid-column: 8"] { border-right: 1px solid #4a5fc7; } /* 일요일은 기본선 */
+
+    /* 본문: 요일 그룹 오른쪽에 굵은 선 */
+    .day-group { border-right: 4px solid rgba(0,0,0,0.15); }
+    .day-group[data-day="6"] { border-right: none; }
+
+    /* 내부 셀의 오른쪽 테두리를 없애고 day-group의 굵은 선이 보이게 */
+    .schedule-cell.right { border-right: none; }
+
 </style>
 </head>
 
