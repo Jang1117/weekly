@@ -813,7 +813,44 @@
       endSelect.addEventListener('change', updatePrintPreview);
     }
 
-    function updatePrintPreview() {
+    
+    // ✅ v9: 프린트 기본 시간대 자동 설정
+    // - 일정 중 가장 늦은 종료 슬롯(endTime)을 찾고, 그 +30분(= +1 슬롯)까지만 기본 종료시간으로 설정
+    function getAutoPrintEndIndex() {
+      if (!Array.isArray(events) || events.length === 0) return times.length - 1;
+
+      let maxEnd = 0;
+      events.forEach(ev => {
+        if (typeof ev?.endTime === 'number') maxEnd = Math.max(maxEnd, ev.endTime);
+      });
+
+      // endTime은 "마지막 칸" 인덱스이므로, 표시 종료는 +1 슬롯이 일반적
+      // 요구사항: "가장 늦은 시간을 기준으로 +30분" => 종료 인덱스를 (maxEnd + 1)로
+      return Math.min(maxEnd + 1, times.length - 1);
+    }
+
+    function applyAutoPrintDefaults() {
+      const startSelect = document.getElementById('printStartTime');
+      const endSelect = document.getElementById('printEndTime');
+      if (!startSelect || !endSelect) return;
+
+      // 시작은 기존대로 09:00(0) 유지, 종료만 자동 조정
+      startSelect.value = 0;
+      endSelect.value = String(getAutoPrintEndIndex());
+      updatePrintPreview();
+    }
+
+    // ✅ v9: PDF 저장 시 기본 파일명(브라우저별 동작 차이 있음)
+    function getWeekStartYMD() {
+      const mondayStr = (weekDates && weekDates.monday) ? weekDates.monday : getNextMonday();
+      const d = new Date(mondayStr);
+      const yyyy = String(d.getFullYear());
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}${mm}${dd}`;
+    }
+
+function updatePrintPreview() {
       const startIndex = parseInt(document.getElementById('printStartTime').value);
       const endIndex = parseInt(document.getElementById('printEndTime').value);
       const info = document.getElementById('printPreviewInfo');
@@ -830,7 +867,7 @@
 
     function openPrintModal() {
       document.getElementById('printModal').classList.add('active');
-      updatePrintPreview();
+      applyAutoPrintDefaults();
     }
     function closePrintModal() {
       document.getElementById('printModal').classList.remove('active');
@@ -886,6 +923,18 @@
         document.head.appendChild(printStyle);
 
         document.getElementById('loadingOverlay').classList.remove('active');
+
+        // ✅ v9: PDF 저장 시 기본 파일명 설정 (Chrome 등에서 document.title을 사용)
+        const originalTitle = document.title;
+        const ymd = getWeekStartYMD();
+        document.title = `주간일정표_${ymd}`;
+
+        const restoreTitle = () => {
+          document.title = originalTitle;
+          window.removeEventListener('afterprint', restoreTitle);
+        };
+        window.addEventListener('afterprint', restoreTitle);
+
         setTimeout(() => window.print(), 100);
 
       } catch (error) {
